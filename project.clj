@@ -6,7 +6,10 @@
                  [javax.servlet/servlet-api "2.5"]
                  [zweikopf "1.0.1" :exclusions [org.jruby/jruby-complete]]
                 ]
-  ;; PATH=/tmp/bundler/bin:$PATH GEM_HOME=/tmp/bundler lein gem install bundler
+  ;; PATH=`pwd`/target/bundler/bin:$PATH GEM_HOME=`pwd`/target/bundler lein gem install rails
+  ;; PATH=`pwd`/target/bundler/bin:$PATH GEM_HOME=`pwd`/target/bundler lein rails new hello
+  ;; PATH=`pwd`/target/bundler/bin:$PATH GEM_HOME=`pwd`/target/bundler lein bundle install --gemfile=hello/Gemfile
+  ;; PATH=`pwd`/target/bundler/bin:$PATH GEM_HOME=`pwd`/target/bundler lein repl
   :aliases {"gem"    ["run" "-m" "org.jruby.Main" "-S" "gem"]
             "bundle" ["run" "-m" "org.jruby.Main" "-S" "bundle"]
             "rails"  ["run" "-m" "org.jruby.Main" "-S" "rails"]})

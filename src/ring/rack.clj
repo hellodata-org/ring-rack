@@ -1,8 +1,9 @@
 (ns ring.rack
-  (:import org.jruby.embed.io.WriterOutputStream
-           org.jruby.javasupport.JavaEmbedUtils
-           org.jruby.RubyIO
-           org.jruby.rack.servlet.RewindableInputStream)
+  (:import  org.jruby.embed.io.WriterOutputStream
+           [org.jruby.embed ScriptingContainer LocalContextScope]
+            org.jruby.javasupport.JavaEmbedUtils
+            org.jruby.RubyIO
+            org.jruby.rack.servlet.RewindableInputStream)
   (:require [clojure.string :as str]))
 
 (defn ^java.util.Map ->rack-default-hash [^org.jruby.embed.ScriptingContainer rs]
@@ -23,13 +24,14 @@
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers
                                       scheme server-name server-port remote-addr] :as request}
                               runtime rack-default-hash]
+  {:pre [request-method server-name uri]}
   (let [hash
         (doto
           (.rbClone rack-default-hash)
           (.put "rack.input"        (if body (RewindableInputStream. ^InputStream body)
                                      #_else "" ))
           (.put "rack.errors"       (RubyIO. runtime (WriterOutputStream. *err*)))
-          (.put "rack.url_scheme"   (name scheme))
+          (.put "rack.url_scheme"   (if scheme (name scheme) #_else "http"))
           (.put "REQUEST_METHOD"    (case request-method
                                       :get "GET", :post "POST", :put "PUT", :delete "DELETE"
                                       (-> request-method name str/upper-case)))
@@ -39,29 +41,48 @@
           (.put "SERVER_NAME"       server-name)
           (.put "SERVER_PORT"       (or server-port "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
-    (when-let [content-length (re-matches #"[0-9]+" (get headers "content-length"))]
-      (.put "CONTENT_LENGTH" content-length))
+    (when-let [content-length (some->> (get headers "content-length") re-matches #"[0-9]+")]
+      (.put hash "CONTENT_LENGTH" content-length))
     (when-let [content-type (get headers "content-type")]
-      (.put "CONTENT_TYPE" content-type))
+      (when-not (empty? content-type)
+        (.put hash "CONTENT_TYPE" content-type)))
     ;; Put HTTP_ header variables
-    (doseq [[name value] headers :when (not #{"content-type" "content-length"} name)]
-      (.put (->> (.split (str name) "-")  (map str/upper-case) (str/join "_")) value))
+    (doseq [[name value] headers :when (not (#{"content-type" "content-length"} name))]
+      (.put hash (->> (.split (str name) "-")  (map str/upper-case) (str/join "_")) value))
     ;; All done!
     hash))
 
+(def buffer-response
+  (let [sc (ScriptingContainer.)]
+    (.runScriptlet sc
+      "def buf(output)
+        buffer = java.io.ByteArrayOutputStream.new
+        begin
+          output.each do |s|
+            buffer.write(s.to_java_bytes)
+          end
+        ensure
+          output.close
+         end
+        buffer
+      end")
+    sc))
 
 (defn rack-hash->response-map [[status headers body :as response]]
   {:status status
    :headers (->> headers (remove (fn [[k v]] (.startsWith (str k) "rack."))) (into {}))
-   :body    (JavaEmbedUtils/rubyToJava body)})
+   :body    #_(org.jruby.util.IOInputStream. body) ;not a legal argument to this wrapper, cause it doesn't respond to "read".
+            (java.io.ByteArrayInputStream. (.toByteArray (.callMethod buffer-response nil "buf" body java.io.ByteArrayOutputStream)))})
 
+(defn call-rack-handler [env scripting-container rack-handler]
+  (. scripting-container callMethod rack-handler "call" env java.lang.Object))
 
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
-  [request runtime rack-default-hash rack-handler]
+  [request scripting-container rack-default-hash rack-handler]
   (-> request
-      (request-map->rack-hash rack-default-hash runtime)
-      (rack-handler rack-default-hash)
+      (request-map->rack-hash (.. scripting-container getProvider getRuntime) rack-default-hash)
+      (call-rack-handler scripting-container rack-handler)
       (rack-hash->response-map)))
 
 
@@ -71,15 +92,20 @@
 
 (defn wrap-rack-handler
   ([rack-handler]
-    (wrap-rack-handler (org.jruby.embed.ScriptingContainer.)))
+    (wrap-rack-handler (ScriptingContainer. LocalContextScope/CONCURRENT) rack-handler))
 
-  ([runtime rack-handler]
-    (let [rack-default-hash (->rack-default-hash runtime)]
+  ([scripting-container rack-handler]
+    (let [rack-default-hash (->rack-default-hash scripting-container)]
       (fn [request]
-        (ring->rack->ring request runtime rack-default-hash rack-handler)))))
+        (ring->rack->ring request scripting-container rack-default-hash rack-handler)))))
 
-(defn rails-app
-  ;; https://github.com/jruby/jruby-rack/blob/master/src/main/java/org/jruby/rack/rails/RailsRackApplicationFactory.java
-  ""
-  []
-  (wrap-rack-handler #_rails-handler))
+(defn boot-rails
+  [runtime]
+  (.runScriptlet runtime "require 'bundler'")
+  (.runScriptlet runtime "require 'rack'")
+  (.runScriptlet runtime "app, options = Rack::Builder.parse_file('hello/config.ru'); Rails.application"))
+
+
+(defn rails-app [runtime]
+  (wrap-rack-handler runtime (boot-rails runtime)))
+
