@@ -82,6 +82,14 @@
       (rack-hash->response-map)))
 
 
+(defn boot-rails
+  [runtime path-to-app]
+  (.runScriptlet runtime (str "require 'bundler'
+                               require 'rack'
+                               app, options = Rack::Builder.parse_file('" path-to-app "/config.ru')
+                               Rails.application")))
+
+
 ;;;
 ;;; Public API
 ;;;
@@ -95,13 +103,6 @@
       (fn [request]
         (ring->rack->ring request scripting-container rack-default-hash rack-handler)))))
 
-(defn boot-rails
-  [runtime]
-  (.runScriptlet runtime "require 'bundler'")
-  (.runScriptlet runtime "require 'rack'")
-  (.runScriptlet runtime "app, options = Rack::Builder.parse_file('hello/config.ru'); Rails.application"))
-
-
-(defn rails-app [runtime]
-  (wrap-rack-handler runtime (boot-rails runtime)))
+(defn rails-app [runtime path-to-app]
+  (wrap-rack-handler runtime (boot-rails runtime path-to-app)))
 
