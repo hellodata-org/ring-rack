@@ -83,11 +83,13 @@
 
 
 (defn boot-rails
-  [runtime path-to-app]
-  (.runScriptlet runtime (str "require 'bundler'
-                               require 'rack'
-                               app, options = Rack::Builder.parse_file('" path-to-app "/config.ru')
-                               Rails.application")))
+  [path-to-app scripting-container]
+  (.setLoadPaths scripting-container (concat (.getLoadPaths scripting-container) [path-to-app]))
+  (.runScriptlet scripting-container
+    (str "require 'bundler'
+          require 'rack'
+          app, options = Rack::Builder.parse_file('" path-to-app "/config.ru')
+          Rails.application")))
 
 
 ;;;
@@ -96,13 +98,17 @@
 
 (defn wrap-rack-handler
   ([rack-handler]
-    (wrap-rack-handler (ScriptingContainer. LocalContextScope/CONCURRENT) rack-handler))
+    (wrap-rack-handler rack-handler (new-scripting-container)))
 
-  ([scripting-container rack-handler]
+  ([rack-handler scripting-container]
     (let [rack-default-hash (->rack-default-hash scripting-container)]
       (fn [request]
         (ring->rack->ring request scripting-container rack-default-hash rack-handler)))))
 
-(defn rails-app [runtime path-to-app]
-  (wrap-rack-handler runtime (boot-rails runtime path-to-app)))
+(defn rails-app
+  ([path-to-app]
+    (rails-app path-to-app (new-scripting-container)))
 
+  ([path-to-app scripting-container]
+    (-> (boot-rails path-to-app scripting-container)
+        (wrap-rack-handler scripting-container))))
