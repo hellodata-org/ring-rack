@@ -56,26 +56,22 @@
   (let [sc (ScriptingContainer.)]
     (.runScriptlet sc
       "def buf(output)
-        buffer = java.io.ByteArrayOutputStream.new
         begin
-          output.each do |s|
-            buffer.write(s.to_java_bytes)
-          end
+          return output[0].to_java if output.respond_to?(:size) && output.size > 1
+          Java::clojure.lang.RT.seq( output.each{|s| s.to_java} )
         ensure
-          output.close
+          output.close if output.respond_to?(:close)
          end
-        buffer
       end")
     sc))
 
 (defn rack-hash->response-map [[status headers body :as response]]
   {:status status
    :headers (->> headers (remove (fn [[k v]] (.startsWith (str k) "rack."))) (into {}))
-   :body    #_(org.jruby.util.IOInputStream. body) ;not a legal argument to this wrapper, cause it doesn't respond to "read".
-            (java.io.ByteArrayInputStream. (.toByteArray (.callMethod buffer-response nil "buf" body java.io.ByteArrayOutputStream)))})
+   :body    (.callMethod buffer-response nil "buf" body Object)})
 
 (defn call-rack-handler [env scripting-container rack-handler]
-  (. scripting-container callMethod rack-handler "call" env java.lang.Object))
+  (. scripting-container callMethod rack-handler "call" env Object))
 
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
