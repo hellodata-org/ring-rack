@@ -1,6 +1,6 @@
-# clj-jruby-rack
+# clj-trainwreck
 
-A Clojure library designed that implements Ruby's [Rack](http://www.rubydoc.info/github/rack/rack/master/file/SPEC) as a Clojure [Ring](https://github.com/ring-clojure/ring/blob/master/SPEC) handler function.
+Clojure library that implements Ruby's [Rack](http://www.rubydoc.info/github/rack/rack/master/file/SPEC) as a Clojure [Ring](https://github.com/ring-clojure/ring/blob/master/SPEC) handler function.
 
 ## Usage
 
@@ -15,7 +15,7 @@ Rails app or middleware:
 
 ```clj
 (require 'ring.rack)
-(ring.rack/rails-app "path/to/rails/app") ;<- FIXME
+(ring.rack/rails-app "path/to/rails/app")
 ```
 
 
