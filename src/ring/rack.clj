@@ -1,14 +1,56 @@
 (ns ring.rack
   (:import  org.jruby.embed.io.WriterOutputStream
            [org.jruby.embed ScriptingContainer LocalContextScope]
+           [org.jruby.runtime CallSite MethodIndex]
             org.jruby.javasupport.JavaEmbedUtils
-            org.jruby.RubyIO
-            org.jruby.rack.servlet.RewindableInputStream)
-  (:require [clojure.string :as str]))
+           [org.jruby Ruby RubyHash RubyIO RubyInteger RubyObject])
+  (:require [clojure.string :as str]
+            [clojure.java.io :as io]))
 
-(defn ^java.util.Map ->rack-default-hash [^org.jruby.embed.ScriptingContainer rs]
+(def ^CallSite rewindable-call (MethodIndex/getFunctionalCallSite "rewindable"))
+(def ^CallSite responsify-call (MethodIndex/getFunctionalCallSite "responsify"))
+(def ^CallSite rack-call       (MethodIndex/getFunctionalCallSite "call"))
+
+(def ^ScriptingContainer ruby-helpers
+  (let [sc (ScriptingContainer.)]
+    (.setLoadPaths sc (concat (.getLoadPaths sc)
+                              (.toExternalForm (io/resource "rack-1.6.4/lib"))))
+    (.runScriptlet sc "
+      require 'rack'
+      require 'rack/rewindable_input'
+
+      def rewindable(input)
+        Rack::RewindableInput.new(input)
+      end
+
+      def responsify(output)
+        begin
+          return output[0].to_java if output.respond_to?(:size) && output.size > 1
+          output.each{|s| s.to_java}
+        ensure
+          output.close if output.respond_to?(:close)
+         end
+      end")
+    sc))
+
+(def ^Ruby helper-runtime
+  (.. ruby-helpers getProvider getRuntime))
+
+(defn rewindable [^java.io.InputStream input-stream ^Ruby runtime]
+  (.call rewindable-call (.getCurrentContext runtime)
+         (.getTopSelf runtime) (.getTopSelf helper-runtime) (RubyIO. runtime input-stream)))
+
+(defn responsify [^RubyObject body]
+  (-> (.call responsify-call (.getCurrentContext helper-runtime)
+             (.getTopSelf helper-runtime) (.getTopSelf helper-runtime) body)
+      (seq)))
+
+(defn new-scripting-container []
+  (ScriptingContainer. LocalContextScope/CONCURRENT))
+
+(defn ->rack-default-hash [^ScriptingContainer rs]
   (.runScriptlet rs "require 'rack'")
-  (doto (org.jruby.RubyHash. (.. rs getProvider getRuntime))
+  (doto (RubyHash. (.. rs getProvider getRuntime))
         (.put "clojure.version"   (clojure-version))
         (.put "jruby.version"     (.runScriptlet rs "JRUBY_VERSION"))
         (.put "rack.version"      (.runScriptlet rs "::Rack::VERSION"))
@@ -23,12 +65,12 @@
 
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers
                                       scheme server-name server-port remote-addr] :as request}
-                              runtime rack-default-hash]
+                              ^Ruby runtime ^RubyHash rack-default-hash]
   {:pre [request-method server-name uri]}
   (let [hash
         (doto
-          (.rbClone rack-default-hash)
-          (.put "rack.input"        (if body (RewindableInputStream. ^InputStream body)
+          ^RubyHash (.rbClone rack-default-hash)
+          (.put "rack.input"        (if body (rewindable body runtime)
                                      #_else "" ))
           (.put "rack.errors"       (RubyIO. runtime (WriterOutputStream. *err*)))
           (.put "rack.url_scheme"   (if scheme (name scheme) #_else "http"))
@@ -52,30 +94,19 @@
     ;; All done!
     hash))
 
-(def buffer-response
-  (let [sc (ScriptingContainer.)]
-    (.runScriptlet sc
-      "def buf(output)
-        begin
-          return output[0].to_java if output.respond_to?(:size) && output.size > 1
-          Java::clojure.lang.RT.seq( output.each{|s| s.to_java} )
-        ensure
-          output.close if output.respond_to?(:close)
-         end
-      end")
-    sc))
-
 (defn rack-hash->response-map [[status headers body :as response]]
-  {:status status
+  {:status  status
    :headers (->> headers (remove (fn [[k v]] (.startsWith (str k) "rack."))) (into {}))
-   :body    (.callMethod buffer-response nil "buf" body Object)})
+   :body    (responsify body)})
 
-(defn call-rack-handler [env scripting-container rack-handler]
-  (. scripting-container callMethod rack-handler "call" env Object))
+(defn call-rack-handler [^RubyHash env ^ScriptingContainer scripting-container
+                         ^RubyObject rack-handler]
+  (.call rack-call (.. scripting-container getProvider getRuntime getCurrentContext)
+         rack-handler rack-handler env))
 
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
-  [request scripting-container rack-default-hash rack-handler]
+  [request ^ScriptingContainer scripting-container rack-default-hash rack-handler]
   (-> request
       (request-map->rack-hash (.. scripting-container getProvider getRuntime) rack-default-hash)
       (call-rack-handler scripting-container rack-handler)
@@ -83,7 +114,7 @@
 
 
 (defn boot-rails
-  [path-to-app scripting-container]
+  [path-to-app ^ScriptingContainer scripting-container]
   (.setLoadPaths scripting-container (concat (.getLoadPaths scripting-container) [path-to-app]))
   (.runScriptlet scripting-container
     (str "require 'bundler'
