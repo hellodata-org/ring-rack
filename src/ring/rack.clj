@@ -14,7 +14,7 @@
 (def ^ScriptingContainer ruby-helpers
   (let [sc (ScriptingContainer.)]
     (.setLoadPaths sc (concat (.getLoadPaths sc)
-                              (.toExternalForm (io/resource "rack-1.6.4/lib"))))
+                              [(.toExternalForm (io/resource "rack-1.6.4/lib"))]))
     (.runScriptlet sc "
       require 'rack'
       require 'rack/rewindable_input'
