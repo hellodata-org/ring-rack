@@ -83,7 +83,7 @@
           (.put "SERVER_NAME"       server-name)
           (.put "SERVER_PORT"       (or server-port "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
-    (when-let [content-length (some->> (get headers "content-length") re-matches #"[0-9]+")]
+    (when-let [content-length (some->> (get headers "content-length") (re-matches #"[0-9]+"))]
       (.put hash "CONTENT_LENGTH" content-length))
     (when-let [content-type (get headers "content-type")]
       (when-not (empty? content-type)
