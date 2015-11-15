@@ -25,8 +25,9 @@
 
       def responsify(output)
         begin
-          return output[0].to_java if output.respond_to?(:size) && output.size > 1
-          output.each{|s| s.to_java}
+          retval = []
+          output.each {|s| retval.push(s)}
+          retval
         ensure
           output.close if output.respond_to?(:close)
          end
