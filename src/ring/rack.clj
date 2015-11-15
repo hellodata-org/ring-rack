@@ -25,8 +25,9 @@
 
       def responsify(output)
         begin
-          return output[0].to_java if output.respond_to?(:size) && output.size > 1
-          output.each{|s| s.to_java}
+          retval = []
+          output.each {|s| retval.push(s)}
+          retval
         ensure
           output.close if output.respond_to?(:close)
          end
@@ -83,14 +84,14 @@
           (.put "SERVER_NAME"       server-name)
           (.put "SERVER_PORT"       (or server-port "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
-    (when-let [content-length (some->> (get headers "content-length") re-matches #"[0-9]+")]
+    (when-let [content-length (some->> (get headers "content-length") (re-matches #"[0-9]+"))]
       (.put hash "CONTENT_LENGTH" content-length))
     (when-let [content-type (get headers "content-type")]
       (when-not (empty? content-type)
         (.put hash "CONTENT_TYPE" content-type)))
     ;; Put HTTP_ header variables
     (doseq [[name value] headers :when (not (#{"content-type" "content-length"} name))]
-      (.put hash (->> (.split (str name) "-")  (map str/upper-case) (str/join "_")) value))
+      (.put hash (str "HTTP_" (->> (.split (str name) "-")  (map str/upper-case) (str/join "_"))) value))
     ;; All done!
     hash))
 
