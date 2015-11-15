@@ -90,7 +90,7 @@
         (.put hash "CONTENT_TYPE" content-type)))
     ;; Put HTTP_ header variables
     (doseq [[name value] headers :when (not (#{"content-type" "content-length"} name))]
-      (.put hash (->> (.split (str name) "-")  (map str/upper-case) (str/join "_")) value))
+      (.put hash (str "HTTP_" (->> (.split (str name) "-")  (map str/upper-case) (str/join "_"))) value))
     ;; All done!
     hash))
 
