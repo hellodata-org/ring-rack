@@ -5,7 +5,8 @@
             org.jruby.javasupport.JavaEmbedUtils
            [org.jruby Ruby RubyHash RubyIO RubyInteger RubyObject])
   (:require [clojure.string :as str]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [zweikopf.multi :as zw]))
 
 (def ^CallSite rewindable-call (MethodIndex/getFunctionalCallSite "rewindable"))
 (def ^CallSite responsify-call (MethodIndex/getFunctionalCallSite "responsify"))
@@ -64,15 +65,16 @@
 (defn ->RubyIO [value]
   (condp instance? value ))
 
-(defn request-map->rack-hash [{:keys [request-method uri query-string body headers
+(defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
                                       scheme server-name server-port remote-addr] :as request}
-                              ^Ruby runtime ^RubyHash rack-default-hash]
+                              ^ScriptingContainer scripting-container ^RubyHash rack-default-hash]
   {:pre [request-method server-name uri]}
-  (let [hash
+  (let [runtime (.. scripting-container getProvider getRuntime)
+        body-input (when body (rewindable body runtime))
+        hash
         (doto
           ^RubyHash (.rbClone rack-default-hash)
-          (.put "rack.input"        (if body (rewindable body runtime)
-                                     #_else "" ))
+          (.put "rack.input"        (if body body-input #_else "" ))
           (.put "rack.errors"       (RubyIO. runtime (WriterOutputStream. *err*)))
           (.put "rack.url_scheme"   (if scheme (name scheme) #_else "http"))
           (.put "REQUEST_METHOD"    (case request-method
@@ -84,6 +86,11 @@
           (.put "SERVER_NAME"       server-name)
           (.put "SERVER_PORT"       (or server-port "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
+    (when-not (empty? form-params)
+      (.put hash "rack.request.form_input" body-input)
+      ;; We don't set RACK_REQUEST_FORM_VARS, is this bad?
+      ;(.put hash "rack.request.form_vars" ...)
+      (.put hash "rack.request.form_hash"  (zw/rubyize form-params scripting-container)))
     (when-let [content-length (some->> (get headers "content-length") (re-matches #"[0-9]+"))]
       (.put hash "CONTENT_LENGTH" content-length))
     (when-let [content-type (get headers "content-type")]
@@ -109,7 +116,7 @@
   "Maps a Ring request to Rack and the response back to Ring spec"
   [request ^ScriptingContainer scripting-container rack-default-hash rack-handler]
   (-> request
-      (request-map->rack-hash (.. scripting-container getProvider getRuntime) rack-default-hash)
+      (request-map->rack-hash scripting-container rack-default-hash)
       (call-rack-handler scripting-container rack-handler)
       (rack-hash->response-map)))
 

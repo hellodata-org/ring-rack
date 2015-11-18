@@ -1,6 +1,7 @@
 (defproject clj-trainwreck "0.1.0-SNAPSHOT"
   :description "Clojure Ring handler implementation of Ruby's Rack webapp spec. Wrap Ruby on Rails in Clojure!"
   :dependencies [[org.clojure/clojure "1.7.0"]
+                 [zweikopf "1.0.1" :exclusions [org.jruby/jruby-complete]]
                  [org.jruby/jruby "9.0.0.0"]]
   :global-vars {*warn-on-reflection* true}
 
