@@ -6,7 +6,11 @@
            [org.jruby Ruby RubyHash RubyIO RubyInteger RubyObject])
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
+            [ring.middleware.nested-params :as p]
             [zweikopf.multi :as zw]))
+
+;; Ring decided to make this pure function private...
+(def nest-params #'p/nest-params)
 
 (def ^CallSite rewindable-call (MethodIndex/getFunctionalCallSite "rewindable"))
 (def ^CallSite responsify-call (MethodIndex/getFunctionalCallSite "responsify"))
@@ -65,6 +69,15 @@
 (defn ->RubyIO [value]
   (condp instance? value ))
 
+(defn params-map->ruby-hash [params ^ScriptingContainer rs]
+  (let [hash (RubyHash. (.. rs getProvider getRuntime))]
+    (doseq [[k v] params]
+      (.put hash (name k)
+            (cond (map?    v) (params-map->ruby-hash v rs)
+                  (vector? v) (zw/rubyize (last v) rs)
+                  :else       (zw/rubyize       v  rs))))
+    hash))
+
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
                                       scheme server-name server-port remote-addr] :as request}
                               ^ScriptingContainer scripting-container ^RubyHash rack-default-hash]
@@ -90,7 +103,10 @@
       (.put hash "rack.request.form_input" body-input)
       ;; We don't set RACK_REQUEST_FORM_VARS, is this bad?
       ;(.put hash "rack.request.form_vars" ...)
-      (.put hash "rack.request.form_hash"  (zw/rubyize form-params scripting-container)))
+      (.put hash "rack.request.form_hash"
+            (-> form-params
+                (nest-params p/parse-nested-keys)
+                (params-map->ruby-hash scripting-container))))
     (when-let [content-length (some->> (get headers "content-length") (re-matches #"[0-9]+"))]
       (.put hash "CONTENT_LENGTH" content-length))
     (when-let [content-type (get headers "content-type")]
