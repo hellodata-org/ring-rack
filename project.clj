@@ -1,4 +1,4 @@
-(defproject clj-trainwreck "0.1.0-SNAPSHOT"
+(defproject ring-rack "0.0.2"
   :description "Clojure Ring handler implementation of Ruby's Rack webapp spec. Wrap Ruby on Rails in Clojure!"
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [ring/ring-core "1.4.0"]
