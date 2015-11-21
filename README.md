@@ -1,4 +1,4 @@
-# clj-trainwreck
+# ring-rack
 
 Clojure library that implements Ruby's [Rack](http://www.rubydoc.info/github/rack/rack/master/file/SPEC) as a Clojure [Ring](https://github.com/ring-clojure/ring/blob/master/SPEC) handler function.
 
