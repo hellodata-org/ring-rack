@@ -12,47 +12,66 @@
 ;; Ring decided to make this pure function private...
 (def nest-params #'p/nest-params)
 
-(def ^CallSite rewindable-call (MethodIndex/getFunctionalCallSite "rewindable"))
-(def ^CallSite responsify-call (MethodIndex/getFunctionalCallSite "responsify"))
+
 (def ^CallSite rack-call       (MethodIndex/getFunctionalCallSite "call"))
 
-(def ^ScriptingContainer ruby-helpers
-  (let [sc (ScriptingContainer.)]
-    (.setLoadPaths sc (concat (.getLoadPaths sc)
-                              [(.toExternalForm (io/resource "rack-1.6.4/lib"))]))
-    (.runScriptlet sc "
-      require 'rack'
-      require 'rack/rewindable_input'
+(defn ruby-fn [^ScriptingContainer sc ruby-code-string]
+  (.runScriptlet sc
+    (str "Class.new(Java::clojure.lang.AFn) {
+            def invoke" ruby-code-string "
+            end
+          }.new()")))
 
-      def rewindable(input)
-        Rack::RewindableInput.new(input)
-      end
 
-      def responsify(output)
-        begin
-          retval = []
-          output.each {|s| retval.push(s)}
-          retval
-        ensure
-          output.close if output.respond_to?(:close)
-         end
-      end")
-    sc))
-
-(def ^Ruby helper-runtime
-  (.. ruby-helpers getProvider getRuntime))
-
-(defn rewindable [^java.io.InputStream input-stream ^Ruby runtime]
-  (.call rewindable-call (.getCurrentContext runtime)
-         (.getTopSelf runtime) (.getTopSelf helper-runtime) (RubyIO. runtime input-stream)))
-
-(defn responsify [^RubyObject body]
-  (-> (.call responsify-call (.getCurrentContext helper-runtime)
-             (.getTopSelf helper-runtime) (.getTopSelf helper-runtime) body)
-      (seq)))
+(def helper-scripting-container nil)
 
 (defn new-scripting-container []
   (ScriptingContainer. LocalContextScope/CONCURRENT))
+
+(defn ^ScriptingContainer require-rack [^ScriptingContainer sc]
+  (println (.getClassLoader sc))
+  (.setLoadPaths sc (concat (.getLoadPaths sc)
+                            [(.toExternalForm (io/resource "rack-1.6.4/lib"))
+                             (.toExternalForm (io/resource "rack-1.6.4/lib"))]))
+  (.runScriptlet sc "
+    require 'rack'
+    require 'rack/rewindable_input'")
+  sc)
+
+
+(declare rewindable)
+(declare responsify)
+
+(defn ^Ruby set-helper-runtime! [^ScriptingContainer sc]
+  (def helper-scripting-container sc)
+  (def helper-runtime
+    (.. (require-rack sc) getProvider getRuntime))
+  (def rewindable
+    (ruby-fn sc "(inputs) Rack::RewindableInput.new(inputs)"))
+  (def responsify
+    (ruby-fn sc "(output)
+      begin
+        retval = []
+        output.each do |s|
+          #print(s.encoding, \" of \", s.size, \" bytes\\n\")
+          retval.push(
+            if Encoding::BINARY == s.encoding
+              Java::java.io.ByteArrayInputStream.new( s.to_java_bytes )
+            else
+              s.to_java
+            end)
+        end
+        if retval.size == 1
+          retval[0]
+        else
+          Java::clojure.lang.RT.seq(retval)
+        end
+      ensure
+        output.close if output.respond_to?(:close)
+      end")))
+
+(set-helper-runtime! (or helper-scripting-container (new-scripting-container)))
+
 
 (defn ->rack-default-hash [^ScriptingContainer rs]
   (.runScriptlet rs "require 'rack'")
@@ -83,7 +102,7 @@
                               ^ScriptingContainer scripting-container ^RubyHash rack-default-hash]
   {:pre [request-method server-name uri]}
   (let [runtime (.. scripting-container getProvider getRuntime)
-        body-input (when body (rewindable body runtime))
+        body-input (when body (rewindable body))
         hash
         (doto
           ^RubyHash (.rbClone rack-default-hash)
