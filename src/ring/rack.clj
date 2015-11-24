@@ -137,14 +137,14 @@
       (rack-hash->response-map)))
 
 
-(defn boot-rails
+(defn boot-rack
   [path-to-app ^ScriptingContainer scripting-container]
   (.setLoadPaths scripting-container (concat (.getLoadPaths scripting-container) [path-to-app]))
   (.runScriptlet scripting-container
     (str "require 'bundler'
           require 'rack'
           app, options = Rack::Builder.parse_file('" path-to-app "/config.ru')
-          Rails.application")))
+          app")))
 
 
 ;;;
@@ -160,10 +160,10 @@
       (fn [request]
         (ring->rack->ring request scripting-container rack-default-hash rack-handler)))))
 
-(defn rails-app
+(defn rack-app
   ([path-to-app]
-    (rails-app path-to-app (new-scripting-container)))
+    (rack-app path-to-app (new-scripting-container)))
 
   ([path-to-app scripting-container]
-    (-> (boot-rails path-to-app scripting-container)
+    (-> (boot-rack path-to-app scripting-container)
         (wrap-rack-handler scripting-container))))
