@@ -34,6 +34,7 @@
                             [(.toExternalForm (io/resource "rack-1.6.4/lib"))
                              (.toExternalForm (io/resource "rack-1.6.4/lib"))]))
   (.runScriptlet sc "
+    require 'stringio'
     require 'rack'
     require 'rack/rewindable_input'")
   sc)
@@ -52,17 +53,35 @@
     (ruby-fn sc "(output)
       begin
         retval = []
+        binary = false
+
         output.each do |s|
           #print(s.encoding, \" of \", s.size, \" bytes\\n\")
           retval.push(
-            if Encoding::BINARY == s.encoding
+            if s.respond_to?(:encoding) && Encoding::BINARY == s.encoding
+              binary = true
               Java::java.io.ByteArrayInputStream.new( s.to_java_bytes )
             else
-              s.to_java
+              binary = true if s.is_a?(File)
+              s
             end)
         end
+
         if retval.size == 1
-          retval[0]
+          retval[0].to_java
+        elsif binary
+          retval.map! do |s|
+            if s.java_kind_of?(Java::java.io.InputStream)
+              s
+            elsif s.is_a?(File)
+              Java::java.io.FileInputStream.new(s.to_java)
+            elsif s.is_a?(String)
+              StringIO.new(s).to_inputstream
+            else
+              throw \"Unsupported to return multiple byte-strings mixed with: #{s}\"
+            end
+          end
+          Java::java.io.SequenceInputStream.new(Java::java.util.Collections.enumeration(retval))
         else
           Java::clojure.lang.RT.seq(retval)
         end
