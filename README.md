@@ -11,11 +11,11 @@ Generic Rack application or middleware:
 (ring.rack/wrap-rack-handler rack-function) ;<- FIXME
 ```
 
-Rails app or middleware:
+Using a path to a Rack app (like Rails) or middleware:
 
 ```clj
 (require 'ring.rack)
-(ring.rack/rails-app "path/to/rails/app")
+(ring.rack/rack-app "path/to/rails/app")
 ```
 
 
