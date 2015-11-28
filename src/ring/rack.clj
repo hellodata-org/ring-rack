@@ -48,7 +48,7 @@
   (def helper-runtime
     (.. (require-rack sc) getProvider getRuntime))
   (def rewindable
-    (ruby-fn sc "(inputs) Rack::RewindableInput.new(inputs)"))
+    (ruby-fn sc "(inputs) Rack::RewindableInput.new(inputs.to_io)"))
   (def responsify
     (ruby-fn sc "(output)
       begin
