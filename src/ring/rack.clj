@@ -131,7 +131,7 @@
           (.put "PATH_INFO"         uri)
           (.put "QUERY_STRING"      (or query-string ""))
           (.put "SERVER_NAME"       server-name)
-          (.put "SERVER_PORT"       (or server-port "80"))
+          (.put "SERVER_PORT"       (or (str server-port) "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
     (when body-input
       (.put hash "rack.input" body-input))
