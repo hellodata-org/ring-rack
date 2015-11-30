@@ -24,8 +24,6 @@
           }.new()")))
 
 
-(def helper-scripting-container nil)
-
 (defn new-scripting-container []
   (ScriptingContainer. LocalContextScope/CONCURRENT))
 
@@ -41,17 +39,15 @@
   sc)
 
 
-(declare rewindable)
-(declare responsify)
+(def rewindable-fn (memoize
+  (fn [scripting-container]
+    (require-rack scripting-container)
+    (ruby-fn scripting-container "(inputs) Rack::RewindableInput.new(inputs.to_io)"))))
 
-(defn ^Ruby set-helper-runtime! [^ScriptingContainer sc]
-  (def helper-scripting-container sc)
-  (def helper-runtime
-    (.. (require-rack sc) getProvider getRuntime))
-  (def rewindable
-    (ruby-fn sc "(inputs) Rack::RewindableInput.new(inputs.to_io)"))
-  (def responsify
-    (ruby-fn sc "(output)
+(def responsify-fn (memoize
+  (fn [scripting-container]
+    (require-rack scripting-container)
+    (ruby-fn scripting-container "(output)
       begin
         retval = []
         binary = false
@@ -88,10 +84,7 @@
         end
       ensure
         output.close if output.respond_to?(:close)
-      end")))
-
-(set-helper-runtime! (or helper-scripting-container (new-scripting-container)))
-
+      end"))))
 
 (defn ->rack-default-hash [^ScriptingContainer rs]
   (.runScriptlet rs "require 'rack'")
@@ -119,7 +112,9 @@
 
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
                                       scheme server-name server-port remote-addr] :as request}
-                              ^ScriptingContainer scripting-container ^RubyHash rack-default-hash]
+                              ^ScriptingContainer scripting-container
+                              ^RubyHash rack-default-hash
+                              rewindable]
   {:pre [request-method server-name uri]}
   (let [runtime (.. scripting-container getProvider getRuntime)
         body-input (when body (rewindable body))
@@ -157,23 +152,24 @@
     ;; All done!
     hash))
 
-(defn rack-hash->response-map [[status headers body :as response]]
   {:status  status
    :headers (->> headers (remove (fn [[k v]] (.startsWith (str k) "rack."))) (into {}))
    :body    (responsify body)})
+(defn rack-hash->response-map [[status headers body :as response] responsify]
 
 (defn call-rack-handler [^RubyHash env ^ScriptingContainer scripting-container
                          ^RubyObject rack-handler]
   (.call rack-call (.. scripting-container getProvider getRuntime getCurrentContext)
          rack-handler rack-handler env))
 
+
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
-  [request ^ScriptingContainer scripting-container rack-default-hash rack-handler]
+  [request scripting-container rack-default-hash rack-handler rewindable responsify]
   (-> (params-request request)
-      (request-map->rack-hash scripting-container rack-default-hash)
+      (request-map->rack-hash scripting-container rack-default-hash rewindable)
       (call-rack-handler scripting-container rack-handler)
-      (rack-hash->response-map)))
+      (rack-hash->response-map responsify)))
 
 
 (defn boot-rack
@@ -195,9 +191,12 @@
     (wrap-rack-handler rack-handler (new-scripting-container)))
 
   ([rack-handler scripting-container]
-    (let [rack-default-hash (->rack-default-hash scripting-container)]
+    (let [rack-default-hash (->rack-default-hash scripting-container)
+          rewindable (rewindable-fn scripting-container)
+          responsify (responsify-fn scripting-container)]
       (fn [request]
-        (ring->rack->ring request scripting-container rack-default-hash rack-handler)))))
+        (ring->rack->ring request scripting-container rack-default-hash
+                          rack-handler rewindable responsify)))))
 
 (defn rack-app
   ([path-to-app]
