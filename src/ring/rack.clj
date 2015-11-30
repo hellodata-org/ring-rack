@@ -6,6 +6,7 @@
            [org.jruby Ruby RubyHash RubyIO RubyInteger RubyObject])
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
+            [ring.middleware.params :refer (params-request)]
             [ring.middleware.nested-params :as p]
             [zweikopf.multi :as zw]))
 
@@ -169,7 +170,7 @@
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
   [request ^ScriptingContainer scripting-container rack-default-hash rack-handler]
-  (-> request
+  (-> (params-request request)
       (request-map->rack-hash scripting-container rack-default-hash)
       (call-rack-handler scripting-container rack-handler)
       (rack-hash->response-map)))
