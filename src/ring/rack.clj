@@ -92,6 +92,7 @@
         (.put "clojure.version"   (clojure-version))
         (.put "jruby.version"     (.runScriptlet rs "JRUBY_VERSION"))
         (.put "rack.version"      (.runScriptlet rs "::Rack::VERSION"))
+        (.put "rack.input"        (.runScriptlet rs "StringIO.new(''.encode(Encoding::ASCII_8BIT))"))
         (.put "rack.multithread"  true)
         (.put "rack.multiprocess" false)
         (.put "rack.run_once"     false)
@@ -121,7 +122,6 @@
         hash
         (doto
           ^RubyHash (.rbClone rack-default-hash)
-          (.put "rack.input"        (if body body-input #_else "" ))
           (.put "rack.errors"       (RubyIO. runtime (WriterOutputStream. *err*)))
           (.put "rack.url_scheme"   (if scheme (name scheme) #_else "http"))
           (.put "REQUEST_METHOD"    (case request-method
@@ -133,6 +133,8 @@
           (.put "SERVER_NAME"       server-name)
           (.put "SERVER_PORT"       (or server-port "80"))
           (.put "REMOTE_ADDR"       remote-addr))]
+    (when body-input
+      (.put hash "rack.input" body-input))
     (when-not (empty? form-params)
       (.put hash "rack.request.form_input" body-input)
       ;; We don't set RACK_REQUEST_FORM_VARS, is this bad?
