@@ -154,10 +154,15 @@
     ;; All done!
     hash))
 
-  {:status  status
-   :headers (->> headers (remove (fn [[k v]] (.startsWith (str k) "rack."))) (into {}))
-   :body    (responsify body)})
 (defn rack-hash->response-map [[status headers body :as response] responsify]
+  (let [headers (->> headers
+                     (remove (fn [[k v]] (.startsWith (str k) "rack.")))
+                     (reduce conj! (transient {})))
+        headers (if (string? body) (assoc! headers "Content-Length" (-> body count str))
+                 #_else headers)]
+    {:status  status
+     :headers (persistent! headers)
+     :body    (responsify body)}))
 
 (defn call-rack-handler [^RubyHash env ^ScriptingContainer scripting-container
                          ^RubyObject rack-handler]
