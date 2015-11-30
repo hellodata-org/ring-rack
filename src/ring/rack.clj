@@ -41,12 +41,10 @@
 
 (def rewindable-fn (memoize
   (fn [scripting-container]
-    (require-rack scripting-container)
     (ruby-fn scripting-container "(inputs) Rack::RewindableInput.new(inputs.to_io)"))))
 
 (def responsify-fn (memoize
   (fn [scripting-container]
-    (require-rack scripting-container)
     (ruby-fn scripting-container "(output)
       begin
         retval = []
@@ -87,7 +85,6 @@
       end"))))
 
 (defn ->rack-default-hash [^ScriptingContainer rs]
-  (.runScriptlet rs "require 'rack'")
   (doto (RubyHash. (.. rs getProvider getRuntime))
         (.put "clojure.version"   (clojure-version))
         (.put "jruby.version"     (.runScriptlet rs "JRUBY_VERSION"))
@@ -198,6 +195,7 @@
     (wrap-rack-handler rack-handler (new-scripting-container)))
 
   ([rack-handler scripting-container]
+    (require-rack scripting-container)
     (let [rack-default-hash (->rack-default-hash scripting-container)
           rewindable (rewindable-fn scripting-container)
           responsify (responsify-fn scripting-container)]
