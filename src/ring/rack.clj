@@ -157,7 +157,7 @@
                      (reduce conj! (transient {})))
         headers (if (string? body) (assoc! headers "Content-Length" (-> body count str))
                  #_else headers)]
-    {:status  status
+    {:status  (if (string? status) (Integer/parseInt status) #_else status)
      :headers (persistent! headers)
      :body    (responsify body)}))
 
