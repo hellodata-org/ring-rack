@@ -24,7 +24,7 @@
           }.new()")))
 
 
-(defn new-scripting-container []
+(defn ^ScriptingContainer new-scripting-container []
   (ScriptingContainer. LocalContextScope/CONCURRENT))
 
 (defn ^ScriptingContainer require-rack [^ScriptingContainer sc]
