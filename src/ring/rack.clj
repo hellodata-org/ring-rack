@@ -151,15 +151,25 @@
     ;; All done!
     hash))
 
+(defn charset [content-type charset]
+  (-> (or content-type "text/plain")
+      (str/replace #";\s*charset=[^;]*" "")
+      (str "; charset=" charset)))
+
 (defn rack-hash->response-map [[status headers body :as response] responsify]
-  (let [headers (->> headers
+  (let [status  (if (number? status) status #_else (Integer/parseInt (str status)))
+        body    (responsify body)
+        headers (->> headers
                      (remove (fn [[k v]] (.startsWith (str k) "rack.")))
                      (reduce conj! (transient {})))
-        headers (if (string? body) (assoc! headers "Content-Length" (-> body count str))
+        headers (if (string? body)
+                  (-> headers
+                      (assoc! "Content-Length" (-> body str (.getBytes "UTF-8") count str))
+                      (assoc! "Content-Type"   (charset (get headers "Content-Type") "UTF-8")))
                  #_else headers)]
-    {:status  (if (string? status) (Integer/parseInt status) #_else status)
+    {:status  status
      :headers (persistent! headers)
-     :body    (responsify body)}))
+     :body    body}))
 
 (defn call-rack-handler [^RubyHash env ^ScriptingContainer scripting-container
                          ^RubyObject rack-handler]
