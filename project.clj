@@ -1,4 +1,4 @@
-(defproject ring-rack "0.0.8-SNAPSHOT"
+(defproject ring-rack "0.0.9-SNAPSHOT"
   :description "Clojure Ring handler implementation of Ruby's Rack webapp spec. Wrap Ruby on Rails in Clojure!"
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [ring/ring-core "1.4.0"]
