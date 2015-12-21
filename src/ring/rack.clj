@@ -99,7 +99,17 @@
 (defn ->RubyIO [value]
   (condp instance? value ))
 
-(defn int-key+value--pairs->vector [kv-pairs]
+(defn int-key+value--pairs->vector
+  "Convert a sequence (or map) of [integer-key value] pairs to a vector, where integer-key is used
+  as the vector index. Keys are allowed to have gaps, which will be filled with nil values.
+
+  For example:
+    => (int-key+value--pairs->vector {0 :0, 3 :3})
+    [:0 nil nil :3]
+
+    => (int-key+value--pairs->vector {1 :1, 3 :3})
+    [nil :1 nil :3]"
+  [kv-pairs]
   (loop [[[k v] & more :as kv-pairs] (seq kv-pairs)
          newv (transient [])]
     (cond
@@ -116,14 +126,19 @@
              (reduce conj! newv)
              (recur kv-pairs)))))
 
-(defn str-k+v->int-k+v [[k v]]
+(defn- str-k+v->int-k+v--within-reason
+  "Converts [string-key value] pair to [integer-key value].
+  For example converts: [\"1\" :x]  to  [1 :x]
+
+  Asserts that key < 1000"
+  [[k v]]
   (let [k (Integer/parseInt k)]
     (assert (<= k 1000) k) ;; Prevent abuse
     [k v]))
 
 (defn try-integer-keyed-map->vector [kv-pairs]
   (try (->> kv-pairs
-            (map str-k+v->int-k+v)
+            (map str-k+v->int-k+v--within-reason)
             (int-key+value--pairs->vector))
     (catch Exception e
       nil)))
