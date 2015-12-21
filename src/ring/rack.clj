@@ -3,7 +3,7 @@
            [org.jruby.embed ScriptingContainer LocalContextScope]
            [org.jruby.runtime CallSite MethodIndex]
             org.jruby.javasupport.JavaEmbedUtils
-           [org.jruby Ruby RubyHash RubyIO RubyInteger RubyObject])
+           [org.jruby Ruby RubyArray RubyHash RubyIO RubyInteger RubyObject])
   (:require [clojure.string :as str]
             [clojure.java.io :as io]
             [ring.middleware.params :refer (params-request)]
@@ -99,13 +99,60 @@
 (defn ->RubyIO [value]
   (condp instance? value ))
 
+(defn int-key+value--pairs->vector [kv-pairs]
+  (loop [[[k v] & more :as kv-pairs] (seq kv-pairs)
+         newv (transient [])]
+    (cond
+      (nil? k)
+        (persistent! newv)
+
+      (<= k (count newv))
+        (recur more (assoc! newv k v))
+
+      ;; Doing a normal assoc here will result in an IndexOutOfBounds exception
+      ;; Instead, we fill up the vector with `k - count` nil values:
+      :else
+        (->> (-> k (- (count newv)) (repeat nil))
+             (reduce conj! newv)
+             (recur kv-pairs)))))
+
+(defn str-k+v->int-k+v [[k v]]
+  (let [k (Integer/parseInt k)]
+    (assert (<= k 1000) k) ;; Prevent abuse
+    [k v]))
+
+(defn try-integer-keyed-map->vector [kv-pairs]
+  (try (->> kv-pairs
+            (map str-k+v->int-k+v)
+            (int-key+value--pairs->vector))
+    (catch Exception e
+      nil)))
+
+(declare params-map->ruby-hash)
+
+(defn params-map-value->ruby-value [v ^ScriptingContainer rs]
+  (cond
+    (map? v)
+      (if-let [newv (try-integer-keyed-map->vector v)] (params-map-value->ruby-value newv rs)
+       #_else (params-map->ruby-hash v rs))
+
+    (vector? v)
+      (let [num-items  (count v)
+            ruby-array (RubyArray/newArray (.getRuntime rs) num-items)]
+        (loop [i 0]
+          (when (< i num-items)
+            (.set ruby-array i
+                  (params-map-value->ruby-value (nth v i) rs))
+            (recur (inc i))))
+        ruby-array)
+
+    :else
+      (zw/rubyize v rs)))
+
 (defn params-map->ruby-hash [params ^ScriptingContainer rs]
   (let [hash (RubyHash. (.. rs getProvider getRuntime))]
     (doseq [[k v] params]
-      (.put hash (name k)
-            (cond (map?    v) (params-map->ruby-hash v rs)
-                  (vector? v) (zw/rubyize (last v) rs)
-                  :else       (zw/rubyize       v  rs))))
+      (.put hash (name k) (params-map-value->ruby-value v rs)))
     hash))
 
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
