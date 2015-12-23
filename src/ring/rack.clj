@@ -170,6 +170,14 @@
       (.put hash (name k) (params-map-value->ruby-value v rs)))
     hash))
 
+(defn keep-last-string-values [params]
+  "Usage:
+   => (keep-last-string-values {:a [\"1\" \"2\"] :b \"3\"})
+   {:a \"2\", :b \"3\"}"
+  (zipmap (keys params)
+          (map (fn [[k v]] (if (and (vector? v) (-> v first string?)) (last v) #_else v))
+               params)))
+
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
                                       scheme server-name server-port remote-addr] :as request}
                               ^ScriptingContainer scripting-container
@@ -200,6 +208,7 @@
       ;(.put hash "rack.request.form_vars" ...)
       (.put hash "rack.request.form_hash"
             (-> form-params
+                (keep-last-string-values)
                 (nest-params p/parse-nested-keys)
                 (params-map->ruby-hash scripting-container))))
     (when-let [content-length (some->> (get headers "content-length") (re-matches #"[0-9]+"))]
