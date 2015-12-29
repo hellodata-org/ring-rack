@@ -97,7 +97,7 @@
         (.put "SCRIPT_NAME"       "")))
 
 (defn ->RubyIO [value]
-  (condp instance? value ))
+  (condp instance? value)) 
 
 (defn int-key+value--pairs->vector
   "Convert a sequence (or map) of [integer-key value] pairs to a vector, where integer-key is used
@@ -192,7 +192,7 @@
           (.put "rack.errors"       (RubyIO. runtime (WriterOutputStream. *err*)))
           (.put "rack.url_scheme"   (if scheme (name scheme) #_else "http"))
           (.put "REQUEST_METHOD"    (case request-method
-                                      :get "GET", :post "POST", :put "PUT", :delete "DELETE"
+                                      :get "GET", :post "POST", :put "PUT", :patch, "PATCH", :delete "DELETE"
                                       (-> request-method name str/upper-case)))
           (.put "REQUEST_URI"       uri)
           (.put "PATH_INFO"         uri)
