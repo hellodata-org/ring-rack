@@ -172,10 +172,16 @@
 
 (defn keep-last-string-values [params]
   "Usage:
-   => (keep-last-string-values {:a [\"1\" \"2\"] :b \"3\"})
-   {:a \"2\", :b \"3\"}"
+   => (keep-last-string-values {\"form[name]\" [\"1\" \"2\"] \"form[field]\" \"3\"})
+   {\"form[name]\" \"2\", \"form[field]\" \"3\"}
+   => (keep-last-string-values {:a [1 2 3]})
+   {:a [1 2 3]}"
   (zipmap (keys params)
-          (map (fn [[k v]] (if (and (vector? v) (-> v first string?)) (last v) #_else v))
+          (map (fn [[k v]] (if (and (vector? v)
+                                    (string? k)
+                                    (not (.endsWith k "[]")))
+                             (last v)
+                             #_else v))
                params)))
 
 (defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
