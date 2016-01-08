@@ -1,5 +1,6 @@
 (ns ring.rack
-  (:import  org.jruby.embed.io.WriterOutputStream
+  (:import [java.io ByteArrayInputStream ByteArrayOutputStream]
+            org.jruby.embed.io.WriterOutputStream
            [org.jruby.embed ScriptingContainer LocalContextScope]
            [org.jruby.runtime CallSite MethodIndex]
             org.jruby.javasupport.JavaEmbedUtils
@@ -184,14 +185,24 @@
                              #_else v))
                params)))
 
-(defn request-map->rack-hash [{:keys [request-method uri query-string body headers form-params
-                                      scheme server-name server-port remote-addr] :as request}
+(defn duplicate-stream
+  [stream]
+  (let [buffer (ByteArrayOutputStream.)
+        _ (io/copy stream buffer)
+        bytes (.toByteArray buffer)]
+    {:stream1 (ByteArrayInputStream. bytes)
+     :stream2 (ByteArrayInputStream. bytes)}))
+
+(defn request-map->rack-hash [{:keys [request-method server-name uri body] :as request}
                               ^ScriptingContainer scripting-container
                               ^RubyHash rack-default-hash
                               rewindable]
   {:pre [request-method server-name uri]}
   (let [runtime (.. scripting-container getProvider getRuntime)
-        body-input (when body (rewindable body))
+        {:keys [stream1 stream2]} (when (:body request) (duplicate-stream body))
+        {:keys [request-method uri query-string headers form-params
+                scheme server-name server-port remote-addr]} (params-request (assoc request :body stream1))
+        body-input (when stream2 (rewindable stream2))
         hash
         (doto
           ^RubyHash (.rbClone rack-default-hash)
@@ -257,8 +268,7 @@
 (defn ring->rack->ring
   "Maps a Ring request to Rack and the response back to Ring spec"
   [request scripting-container rack-default-hash rack-handler rewindable responsify]
-  (-> (params-request request)
-      (request-map->rack-hash scripting-container rack-default-hash rewindable)
+  (-> (request-map->rack-hash request scripting-container rack-default-hash rewindable)
       (call-rack-handler scripting-container rack-handler)
       (rack-hash->response-map responsify)))
 
