@@ -213,8 +213,11 @@
 
 (defn call-rack-handler [^RubyHash env ^ScriptingContainer scripting-container
                          ^RubyObject rack-handler]
-  (.call rack-call (.. scripting-container getProvider getRuntime getCurrentContext)
-         rack-handler rack-handler env))
+  (try
+    (.call rack-call (.. scripting-container getProvider getRuntime getCurrentContext)
+           rack-handler rack-handler env)
+    (finally
+      (.callMethod scripting-container (get env "rack.input") "close" Object))))
 
 
 (defn ring->rack->ring
