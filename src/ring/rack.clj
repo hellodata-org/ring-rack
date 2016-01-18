@@ -46,15 +46,18 @@
 
 (def responsify-fn (memoize
   (fn [scripting-container]
-    (ruby-fn scripting-container "(output)
+    (ruby-fn scripting-container "(headers, output, textual)
       begin
         retval = []
         binary = false
+        #print headers
+        forced_binary = !textual
 
         output.each do |s|
-          #print(s.encoding, \" of \", s.size, \" bytes\\n\")
+          b = output.body if output.respond_to?(:body)
+          #print(s.encoding, output, b, \" of \", s.size, \" bytes\\n\")
           retval.push(
-            if s.respond_to?(:encoding) && Encoding::BINARY == s.encoding
+            if s.is_a?(String) && (forced_binary || Encoding::BINARY == s.encoding)
               binary = true
               Java::java.io.ByteArrayInputStream.new( s.to_java_bytes )
             else
@@ -198,7 +201,8 @@
 
 (defn rack-hash->response-map [[status headers body :as response] responsify]
   (let [status  (if (number? status) status #_else (Integer/parseInt (str status)))
-        body    (responsify body)
+        body    (responsify headers body
+                            (re-find #"text/|/xml|/json|script|yaml" (get headers "Content-Type" "")))
         headers (->> headers
                      (remove (fn [[k v]] (.startsWith (str k) "rack.")))
                      (reduce conj! (transient {})))
