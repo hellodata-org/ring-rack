@@ -132,7 +132,7 @@
   (zipmap (keys params)
           (map (fn [[k v]] (if (and (vector? v)
                                     (string? k)
-                                    (not (.endsWith k "[]")))
+                                    (not (.endsWith ^String k "[]")))
                              (last v)
                              #_else v))
                params)))
